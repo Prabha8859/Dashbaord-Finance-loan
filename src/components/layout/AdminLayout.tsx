@@ -57,10 +57,11 @@ const hoverOff = (e: React.MouseEvent<HTMLElement>, active: boolean) => {
 
 // ── Profile Dropdown ──────────────────────────────────────────────────────────
 const ProfileDropdown = ({
-  name, email, role, onProfile, onLogout,
-}: { name?: string; email?: string; role?: string; onProfile: () => void; onLogout: () => void }) => {
+  name, email, role, onLogout,
+}: { name?: string; email?: string; role?: string; onLogout: () => void }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -105,10 +106,10 @@ const ProfileDropdown = ({
 
           <div className="py-1">
             {[
-              { icon: UserCircle, label: "Profile Settings", action: onProfile },
-              { icon: Settings,   label: "Account Settings", action: onProfile },
+              { icon: UserCircle, label: "Profile Settings",  action: () => { setOpen(false); navigate("/profile?tab=profile");  } },
+              { icon: Settings,   label: "Account Settings",  action: () => { setOpen(false); navigate("/profile?tab=security"); } },
             ].map(({ icon: Icon, label, action }) => (
-              <button key={label} onClick={() => { setOpen(false); action(); }}
+              <button key={label} onClick={action}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition">
                 <Icon size={15} className="text-slate-400" />{label}
               </button>
@@ -337,7 +338,6 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
                 name={admin?.name}
                 email={admin?.email}
                 role={admin?.role}
-                onProfile={handleProfile}
                 onLogout={handleLogout}
               />
             </div>

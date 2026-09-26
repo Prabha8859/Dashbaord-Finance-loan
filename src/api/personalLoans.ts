@@ -84,6 +84,7 @@ const SLUG_ENDPOINT: Record<string, string> = {
   "business-loan":          "/business-loans",
   "home-loan":              "/home-loans",
   "loan-against-property":  "/loan-against-properties",
+  "balance-transfer":       "/balance-transfers",
 };
 
 /** All slugs that have a live backend endpoint */
