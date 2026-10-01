@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, Navigate, Link } from "react-router-dom";
 import { loginAdmin } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
+import { getApiErrorMessage } from "../utils/apiError";
 
 const Login = () => {
   const { isLoggedIn, login } = useAuth();
@@ -25,10 +26,8 @@ const Login = () => {
       const res = await loginAdmin({ email, password });
       login(res.token, res.admin);
       navigate("/dashboard", { replace: true });
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.message || "Unable to login. Please try again."
-      );
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Unable to login. Please try again."));
     } finally {
       setIsSubmitting(false);
     }

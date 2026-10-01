@@ -2,90 +2,192 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Briefcase, Building2, Calendar,
-  CreditCard, Hash, Mail, MapPin, Phone,
-  RefreshCw, TrendingDown, User,
+  Check, CheckCircle2, Clock, Copy, CreditCard, Hash,
+  IndianRupee, Mail, MapPin, Phone,
+  RefreshCw, Send, TrendingDown, Trash2, User, XCircle,
+  Car, Coins, FileText, GraduationCap, Home, Landmark, LayoutList,
 } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { useToast } from "../../context/ToastContext";
 import { getLoanTypeLabel } from "../../constants/loanTypes";
-import { getLoanBySlug, getApiErrorMessage, type PersonalLoan } from "../../api/personalLoans";
+import { deleteLoanBySlug, getLoanBySlug, getApiErrorMessage, type PersonalLoan } from "../../api/personalLoans";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const INR = (v?: number) =>
-  v != null ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(v) : "—";
+// ── Formatters ────────────────────────────────────────────────────────────────
+const INR = (v?: number | null) =>
+  v != null ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(v) : null;
 
-const DT = (iso?: string) =>
-  iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const DT = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null;
 
-const V = (v?: string | number | null) =>
-  v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "—";
+const V = (v?: string | number | boolean | null): string | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return String(v).trim() || null;
+};
 
 const initials = (n?: string) =>
   n ? n.split(" ").slice(0, 2).map(w => w[0]?.toUpperCase() ?? "").join("") : "?";
 
-// ── Status ────────────────────────────────────────────────────────────────────
-const S_CFG: Record<string, { pill: string; dot: string; glow: string }> = {
-  Submitted: { pill: "bg-sky-100 text-sky-700 ring-sky-200",       dot: "bg-sky-500",     glow: "#0ea5e9" },
-  Pending:   { pill: "bg-amber-100 text-amber-700 ring-amber-200", dot: "bg-amber-400",   glow: "#f59e0b" },
-  Approved:  { pill: "bg-emerald-100 text-emerald-700 ring-emerald-200", dot: "bg-emerald-500", glow: "#10b981" },
-  Rejected:  { pill: "bg-red-100 text-red-600 ring-red-200",       dot: "bg-red-500",     glow: "#ef4444" },
+// Label formatter — camelCase → Title Case
+const toLabel = (key: string) =>
+  key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, s => s.toUpperCase())
+    .trim();
+
+// ── Scroll-spy for the in-page section navigation ────────────────────────────
+const useActiveSection = (ids: string[]) => {
+  const key = ids.join("|");
+  const [active, setActive] = useState<string | null>(ids[0] ?? null);
+
+  useEffect(() => {
+    if (!key) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: "-90px 0px -60% 0px", threshold: 0 }
+    );
+    key.split("|").forEach((sectionId) => {
+      const el = document.getElementById(sectionId);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [key]);
+
+  return active;
 };
 
-// ── Building blocks ───────────────────────────────────────────────────────────
+// ── Fields to skip in the "extra" section (already shown elsewhere) ──────────
+const KNOWN_FIELDS = new Set([
+  "_id","user","__v","loanType","loanAmount","loanTenure","status","createdAt","updatedAt",
+  // applicant
+  "fullName","mobile","email","dob","panNumber","state","city","pincode","residenceStatus",
+  // salaried employment
+  "employmentType","companyName","companyType","companyTypeOther",
+  "monthlySalary","salaryReceivedAs","salaryReceivedAsOther","salaryBankName","salaryBankOther",
+  // liabilities
+  "existingEMI","existingLoanAmount","existingBanks","otherBankList","existingLoanTypes","otherLoanList",
+  // business loan
+  "businessName","businessType","businessTypeOther","businessVintage","businessEstablishedDate",
+  "businessState","businessCity","businessPincode","businessPincodeOther",
+  "businessPlaceStatus","businessPlaceStatusOther",
+  "currentYearTurnover","priorYearTurnover","lastYearTurnover","last2YearsTurnover",
+  "currentYearNetIncome","previousYearNetIncome","lastYearNetIncome","last2YearsNetIncome",
+  "gstNumber","udyamNumber","companyPanNumber",
+  "natureOfBusiness","natureOfBusinessOther","industryType","industryTypeOther","subIndustry",
+  // self-employed professional
+  "profession","professionOther",
+  // buying property (commercial purchase / LAP)
+  "buyingPropertyType","buyingPropertyTypeOther","buyingPropertyMarketValue","buyingPropertyAge",
+  "buyingPropertyState","buyingPropertyCity","buyingPropertyPincode","buyingPropertyPincodeOther",
+  // sections object (nested — we render flat fields instead)
+  "sections",
+  // lease rental discounting
+  "monthlyLeaseIncome","totalLeaseAmount","leasePropertyDuration","leasePropertyMarketValue",
+  "leasePropertyAge","leasePropertyState","leasePropertyCity","leasePropertyPincode","leasePropertyPincodeOther",
+  // transaction bank (handled specially — can be object or string)
+  "transactionBankName","transactionBankOther","transactionBanks",
+]);
 
-/** Coloured metric tile */
-const Tile = ({ label, value, icon: I, color }: { label: string; value: string; icon: React.ComponentType<{ size?: number }>; color: string }) => (
-  <div className="relative flex items-center gap-3.5 rounded-2xl p-4 overflow-hidden border border-white/60"
-    style={{ background: `linear-gradient(135deg,${color}12,${color}06)` }}>
-    <div className="absolute inset-0 rounded-2xl" style={{ border: `1.5px solid ${color}22` }} />
-    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-      style={{ background: color, color: "#fff" }}>
-      <I size={17} />
-    </div>
-    <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: `${color}99` }}>{label}</p>
-      <p className="text-sm font-extrabold text-slate-800 truncate mt-0.5">{value}</p>
+// ── Status config ─────────────────────────────────────────────────────────────
+const STATUS_MAP: Record<string, {
+  bg: string; text: string; ring: string; dot: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  glow: string;
+}> = {
+  Submitted: { bg: "#eff6ff", text: "#1d4ed8", ring: "#bfdbfe", dot: "#3b82f6", icon: Send,         glow: "#3b82f6" },
+  Pending:   { bg: "#fffbeb", text: "#b45309", ring: "#fde68a", dot: "#f59e0b", icon: Clock,         glow: "#f59e0b" },
+  Approved:  { bg: "#f0fdf4", text: "#15803d", ring: "#bbf7d0", dot: "#22c55e", icon: CheckCircle2,  glow: "#22c55e" },
+  Rejected:  { bg: "#fff1f2", text: "#be123c", ring: "#fecdd3", dot: "#f43f5e", icon: XCircle,       glow: "#f43f5e" },
+};
+
+// ── Loan type icon ────────────────────────────────────────────────────────────
+const LOAN_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
+  "personal-loan":         User,
+  "business-loan":         Briefcase,
+  "home-loan":             Home,
+  "loan-against-property": Landmark,
+  "project-loan":          Building2,
+  "car-loan":              Car,
+  "education-loan":        GraduationCap,
+  "credit-card":           CreditCard,
+  "balance-transfer":      TrendingDown,
+  "npa-loan":              FileText,
+  "gold-loan":             Coins,
+  "fdi-loan":              Landmark,
+};
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+const DataField = ({
+  label, value, mono = false, highlight = false,
+}: { label: string; value?: string | null; mono?: boolean; highlight?: boolean }) => (
+  <div className="flex flex-col gap-1">
+    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+    {value
+      ? <span className={`text-sm leading-snug break-words ${mono ? "font-mono" : "font-semibold"} ${highlight ? "text-[#066a9c]" : "text-slate-800"}`}>{value}</span>
+      : <span className="text-sm text-slate-300 font-light">Not provided</span>}
+  </div>
+);
+
+const TagList = ({ label, items }: { label: string; items: string[] }) => (
+  <div className="col-span-full flex flex-col gap-2">
+    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+    <div className="flex flex-wrap gap-2">
+      {items.length > 0
+        ? items.map((item, i) => (
+            <span key={i} className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+              {item}
+            </span>
+          ))
+        : <span className="text-sm text-slate-300 font-light">None</span>}
     </div>
   </div>
 );
 
-/** Section card */
-const Card = ({ title, icon: I, color, children }: {
-  title: string; icon: React.ComponentType<{ size?: number }>; color: string; children: React.ReactNode;
+const InfoSection = ({
+  id, title, subtitle, icon: Icon, accent, children,
+}: {
+  id?: string; title: string; subtitle: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  accent: string;
+  children: React.ReactNode;
 }) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-    <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-        style={{ background: `${color}15`, color }}>
-        <I size={14} />
+  <div id={id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden scroll-mt-28">
+    <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100"
+      style={{ background: "linear-gradient(90deg,#f8fafc,#f1f5f9)" }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: `${accent}15`, color: accent }}>
+        <Icon size={18} />
       </div>
-      <span className="text-sm font-bold text-slate-700">{title}</span>
+      <div>
+        <p className="text-sm font-bold text-slate-800">{title}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+      </div>
     </div>
-    <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
+    <div className="px-6 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
       {children}
     </div>
   </div>
 );
 
-/** Field */
-const F = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
-  <div className="space-y-1">
-    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-    {value === "—"
-      ? <p className="text-sm text-slate-300 font-medium">—</p>
-      : <p className={`text-sm font-semibold text-slate-800 break-words leading-snug ${mono ? "font-mono" : ""}`}>{value}</p>}
-  </div>
-);
-
-/** Divider row of metadata */
-const MetaRow = ({ items }: { items: { label: string; value: string }[] }) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-    <div className="grid divide-x divide-slate-100" style={{ gridTemplateColumns: `repeat(${items.length},1fr)` }}>
-      {items.map(({ label, value }) => (
-        <div key={label} className="px-5 py-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{label}</p>
-          <p className="text-xs font-mono font-semibold text-slate-700 truncate">{value}</p>
-        </div>
-      ))}
+const KpiTile = ({
+  label, value, icon: Icon, color, sub,
+}: { label: string; value: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string; sub?: string }) => (
+  <div className="flex flex-col gap-2 rounded-2xl p-4 border border-slate-100 bg-white shadow-sm">
+    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+      style={{ background: `${color}12`, color }}>
+      <Icon size={17} />
+    </div>
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-lg font-extrabold text-slate-900 leading-tight mt-0.5">{value}</p>
+      {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
     </div>
   </div>
 );
@@ -94,45 +196,145 @@ const MetaRow = ({ items }: { items: { label: string; value: string }[] }) => (
 const PersonalLoanDetail = () => {
   const { loanType, id } = useParams<{ loanType: string; id: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const label    = getLoanTypeLabel(loanType ?? "");
 
   const [loan,  setLoan]  = useState<PersonalLoan | null>(null);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = async () => {
     if (!id || !loanType) return;
     setError("");
     try { setLoan(await getLoanBySlug(loanType, id)); }
-    catch (err) { setError(getApiErrorMessage(err, "Unable to load application details.")); }
+    catch (err) { setError(getApiErrorMessage(err, "Unable to load.")); }
   };
   useEffect(() => { load(); }, [id, loanType]); // eslint-disable-line
 
-  const isBiz  = loanType === "business-loan";
-  const sCfg   = loan ? (S_CFG[loan.status] ?? S_CFG.Submitted) : null;
+  const copyId = async () => {
+    if (!loan) return;
+    try {
+      await navigator.clipboard.writeText(loan._id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  // ── Delete application ────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!loan || !loanType) return;
+    setIsDeleting(true);
+    try {
+      await deleteLoanBySlug(loanType, loan._id);
+      showToast(`${label} application deleted`, "success");
+      navigate(`/applications/${loanType}`, { replace: true });
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Unable to delete this application."), "error");
+      setIsDeleting(false);
+      setPendingDelete(false);
+    }
+  };
+
+  const isBiz   = loanType === "business-loan";
+  const sCfg    = loan ? (STATUS_MAP[loan.status] ?? STATUS_MAP.Submitted) : null;
+  const StatusIcon = sCfg?.icon ?? Send;
+  const LoanIcon   = LOAN_ICON[loanType ?? ""] ?? LayoutList;
+
+  const existingBanks = loan ? [...(loan.existingBanks ?? []), ...(loan.otherBankList ?? [])].filter(Boolean) : [];
+  const existingLoans = loan ? [...(loan.existingLoanTypes ?? []), ...(loan.otherLoanList ?? [])].filter(Boolean) : [];
+
+  // transactionBankName can be string OR { displayName, banks[] }
+  const transactionBanks: string[] = loan
+    ? (() => {
+        const t = loan.transactionBankName;
+        if (!t) return loan.transactionBanks ?? [];
+        if (typeof t === "object" && Array.isArray(t.banks)) return t.banks;
+        return loan.transactionBanks ?? [];
+      })()
+    : [];
+
+  // ── Compute extra fields not in known sections ────────────────────────────
+  const extraFields = loan
+    ? Object.entries(loan).filter(([key, val]) => {
+        if (KNOWN_FIELDS.has(key)) return false;
+        if (val === null || val === undefined) return false;
+        if (Array.isArray(val) && val.length === 0) return false;
+        if (typeof val === "object" && !Array.isArray(val)) return false;
+        return true;
+      })
+    : [];
+
+  // ── Section flags + in-page navigation ────────────────────────────────────
+  const flags = {
+    salaried: loan?.employmentType === "Salaried",
+    business: !isBiz && loan?.employmentType === "Self Employed - Business",
+    professional: !isBiz && loan?.employmentType === "Self Employed - Professional",
+    lease: Boolean(loan?.monthlyLeaseIncome || loan?.leasePropertyMarketValue),
+    buyingProperty: Boolean(loan?.buyingPropertyType || loan?.buyingPropertyMarketValue),
+    isBiz,
+    extra: extraFields.length > 0,
+    liabilities: Boolean(
+      loan &&
+        (loan.existingEMI != null ||
+          loan.existingLoanAmount != null ||
+          existingBanks.length > 0 ||
+          existingLoans.length > 0)
+    ),
+  };
+
+  const navItems: { id: string; label: string }[] = [
+    { id: "applicant", label: "Applicant" },
+    ...(flags.salaried ? [{ id: "employment", label: "Employment" }] : []),
+    ...(flags.business
+      ? [{ id: "business", label: "Business" }, { id: "business-financials", label: "Financials" }]
+      : []),
+    ...(flags.professional
+      ? [{ id: "professional", label: "Professional" }, { id: "professional-financials", label: "Financials" }]
+      : []),
+    ...(flags.lease ? [{ id: "lease-property", label: "Lease Property" }] : []),
+    ...(flags.buyingProperty ? [{ id: "buying-property", label: "Property" }] : []),
+    ...(flags.isBiz
+      ? [{ id: "biz-info", label: "Business Info" }, { id: "biz-financials", label: "Financial Details" }]
+      : []),
+    ...(flags.extra ? [{ id: "additional", label: "Additional" }] : []),
+    ...(flags.liabilities ? [{ id: "liabilities", label: "Liabilities" }] : []),
+    { id: "timeline", label: "Timeline" },
+  ];
+
+  const activeSection = useActiveSection(navItems.map((n) => n.id));
+
+  const jumpTo = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (!loan && !error) return (
     <AdminLayout>
-      <div className="space-y-4 animate-pulse">
-        <div className="h-10 w-64 rounded-xl bg-slate-100" />
-        <div className="h-52 rounded-2xl bg-slate-100" />
-        <div className="h-40 rounded-2xl bg-slate-100" />
-        <div className="h-40 rounded-2xl bg-slate-100" />
+      <div className="animate-pulse space-y-5">
+        <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-slate-100" /><div className="h-8 w-52 rounded-xl bg-slate-100" /></div>
+        <div className="h-52 rounded-3xl bg-slate-100" />
+        <div className="grid grid-cols-4 gap-4">{Array.from({length:4}).map((_,i)=><div key={i} className="h-24 rounded-2xl bg-slate-100"/>)}</div>
+        <div className="h-48 rounded-2xl bg-slate-100" />
+        <div className="h-44 rounded-2xl bg-slate-100" />
       </div>
     </AdminLayout>
   );
 
-  // ── Error ─────────────────────────────────────────────────────────────────────
+  // ── Error ─────────────────────────────────────────────────────────────────
   if (error) return (
     <AdminLayout>
-      <div className="flex flex-col items-center gap-4 py-28 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center shadow-sm">
-          <RefreshCw size={24} className="text-red-400" />
+      <div className="flex flex-col items-center py-32 gap-5 text-center">
+        <div className="w-20 h-20 rounded-3xl bg-red-50 flex items-center justify-center shadow-sm">
+          <XCircle size={32} className="text-red-400" />
         </div>
-        <p className="text-base font-semibold text-slate-700">Failed to load</p>
-        <p className="text-sm text-red-500">{error}</p>
+        <div>
+          <p className="text-lg font-bold text-slate-700">Unable to load application</p>
+          <p className="text-sm text-slate-400 mt-1 max-w-xs">{error}</p>
+        </div>
         <button onClick={load}
-          className="mt-1 flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition">
+          className="flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-xl bg-white border border-slate-200 shadow hover:shadow-md transition">
           <RefreshCw size={14} /> Try again
         </button>
       </div>
@@ -142,174 +344,378 @@ const PersonalLoanDetail = () => {
   return (
     <AdminLayout>
 
-      {/* ── Topbar ── */}
+      {/* ── Nav bar ── */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => navigate(-1)}
-          className="w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition shrink-0">
+          className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 transition shrink-0">
           <ArrowLeft size={15} className="text-slate-500" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Application Detail</p>
-          <h1 className="text-xl font-extrabold text-slate-800 leading-tight">{label}</h1>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Loan Application</p>
+          <h1 className="text-xl font-extrabold text-slate-900 leading-tight">{label}</h1>
+        </div>
+        <div className="hidden md:flex items-center gap-1.5">
+          {loan!.mobile && (
+            <a href={`tel:${loan!.mobile}`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm text-xs font-semibold text-slate-600 hover:text-[#066a9c] transition">
+              <Phone size={13} /> Call
+            </a>
+          )}
+          {loan!.email && (
+            <a href={`mailto:${loan!.email}`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm text-xs font-semibold text-slate-600 hover:text-[#066a9c] transition">
+              <Mail size={13} /> Email
+            </a>
+          )}
+          <button onClick={copyId}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm text-xs font-semibold text-slate-600 hover:text-[#066a9c] transition">
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? "Copied" : "Copy ID"}
+          </button>
         </div>
         {sCfg && (
-          <span className={`flex items-center gap-2 pl-3 pr-4 py-2 rounded-full text-sm font-bold ring-1 ${sCfg.pill}`}>
-            <span className={`w-2 h-2 rounded-full animate-pulse ${sCfg.dot}`} />
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold shadow-sm"
+            style={{ background: sCfg.bg, color: sCfg.text, boxShadow: `0 0 0 1.5px ${sCfg.ring}` }}>
+            <StatusIcon size={14} />
             {loan!.status}
-          </span>
+          </div>
         )}
       </div>
 
-      {/* ── Hero card ── */}
-      <div className="rounded-3xl overflow-hidden shadow-lg border border-white/20 mb-5">
-        {/* Banner */}
-        <div className="relative px-8 py-8 flex items-center gap-6 overflow-hidden"
-          style={{ background: "linear-gradient(135deg,#03405e 0%,#066a9c 55%,#0d9488 100%)" }}>
-          {/* Decorative circles */}
-          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-white/5 pointer-events-none" />
-          <div className="absolute top-6 right-36 w-28 h-28 rounded-full bg-white/5 pointer-events-none" />
-          <div className="absolute -bottom-10 left-1/3 w-36 h-36 rounded-full bg-white/5 pointer-events-none" />
+      <div className="space-y-5">
 
-          {/* Avatar */}
-          <div className="relative z-10 w-18 h-18 shrink-0">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black text-white border-2 border-white/30 shadow-xl"
-              style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}>
-              {initials(loan!.fullName)}
+        {/* ════════════ HERO ════════════════════════════════════════════════ */}
+        <div className="rounded-3xl overflow-hidden shadow-lg"
+          style={{ background: "linear-gradient(135deg,#03405e 0%,#055a84 45%,#0c8a7c 100%)" }}>
+          <div className="relative px-8 py-8 overflow-hidden">
+            <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-white/[0.04] pointer-events-none" />
+            <div className="absolute top-4 right-48 w-32 h-32 rounded-full bg-white/[0.04] pointer-events-none" />
+            <div className="absolute -bottom-12 left-1/3 w-48 h-48 rounded-full bg-white/[0.04] pointer-events-none" />
+
+            <div className="relative z-10 flex items-center gap-6">
+              <div className="relative shrink-0">
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-black text-white border-2 border-white/25 shadow-2xl"
+                  style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(16px)" }}>
+                  {initials(loan!.fullName)}
+                </div>
+                {sCfg && (
+                  <div className="absolute -bottom-2 -right-2 w-6 h-6 rounded-full border-[2.5px] border-white flex items-center justify-center shadow-lg"
+                    style={{ background: sCfg.glow }}>
+                    <StatusIcon size={10} className="text-white" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <h2 className="text-white text-2xl font-extrabold leading-tight">{loan!.fullName ?? "—"}</h2>
+                <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-3">
+                  {loan!.mobile && (
+                    <a href={`tel:${loan!.mobile}`} className="flex items-center gap-1.5 text-white/65 text-[13px] hover:text-white transition">
+                      <Phone size={11} className="shrink-0" />{loan!.mobile}
+                    </a>
+                  )}
+                  {loan!.email && (
+                    <a href={`mailto:${loan!.email}`} className="flex items-center gap-1.5 text-white/65 text-[13px] hover:text-white transition">
+                      <Mail size={11} className="shrink-0" />{loan!.email}
+                    </a>
+                  )}
+                  {loan!.panNumber && (
+                    <span className="flex items-center gap-1.5 text-white/50 text-[13px] font-mono">
+                      <Hash size={11} className="shrink-0" />{loan!.panNumber}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {(loan!.city || loan!.state) && (
+                    <span className="flex items-center gap-1.5 bg-white/10 text-white/75 text-[11px] font-semibold px-3 py-1 rounded-full border border-white/10">
+                      <MapPin size={9} />{[loan!.city, loan!.state, loan!.pincode].filter(Boolean).join(", ")}
+                    </span>
+                  )}
+                  {loan!.residenceStatus && (
+                    <span className="bg-white/10 text-white/75 text-[11px] font-semibold px-3 py-1 rounded-full border border-white/10">
+                      {loan!.residenceStatus}
+                    </span>
+                  )}
+                  {loan!.dob && (
+                    <span className="flex items-center gap-1.5 bg-white/10 text-white/75 text-[11px] font-semibold px-3 py-1 rounded-full border border-white/10">
+                      <Calendar size={9} />{DT(loan!.dob)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="hidden xl:flex flex-col items-end gap-2 shrink-0 text-right">
+                <div className="bg-white/10 border border-white/15 rounded-2xl px-4 py-3">
+                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Applied</p>
+                  <p className="text-white font-bold text-sm mt-0.5">{DT(loan!.createdAt) ?? "—"}</p>
+                </div>
+                <p className="text-white/30 text-[11px]">Updated {DT(loan!.updatedAt) ?? "—"}</p>
+              </div>
             </div>
-            {sCfg && (
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow"
-                style={{ background: sCfg.glow }} />
-            )}
           </div>
 
-          {/* Info */}
-          <div className="relative z-10 flex-1 min-w-0">
-            <h2 className="text-white text-2xl font-extrabold leading-tight truncate">
-              {loan!.fullName ?? "—"}
-            </h2>
-            <div className="flex flex-wrap gap-4 mt-2.5">
-              {loan!.mobile && (
-                <span className="flex items-center gap-1.5 text-white/70 text-sm">
-                  <Phone size={12} className="shrink-0" />{loan!.mobile}
-                </span>
-              )}
-              {loan!.email && (
-                <span className="flex items-center gap-1.5 text-white/70 text-sm truncate">
-                  <Mail size={12} className="shrink-0" />{loan!.email}
-                </span>
-              )}
-              {loan!.panNumber && (
-                <span className="flex items-center gap-1.5 text-white/60 text-sm font-mono">
-                  <Hash size={12} className="shrink-0" />{loan!.panNumber}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {loan!.state && (
-                <span className="flex items-center gap-1.5 bg-white/10 text-white/80 text-xs font-medium px-2.5 py-1 rounded-full">
-                  <MapPin size={10} />{loan!.city ? `${loan!.city}, ` : ""}{loan!.state}
-                </span>
-              )}
-              {loan!.residenceStatus && (
-                <span className="bg-white/10 text-white/80 text-xs font-medium px-2.5 py-1 rounded-full">
-                  {loan!.residenceStatus}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Applied date */}
-          <div className="relative z-10 hidden lg:flex flex-col items-end gap-1 shrink-0">
-            <div className="flex items-center gap-1.5 text-white/50 text-xs font-semibold uppercase tracking-widest">
-              <Calendar size={11} /> Applied
-            </div>
-            <p className="text-white font-bold text-sm">{DT(loan!.createdAt)}</p>
+          {/* KPI row */}
+          <div className="px-6 pb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <KpiTile label="Loan Amount" value={INR(loan!.loanAmount) ?? "—"} icon={IndianRupee} color="#22d3ee" sub="Requested" />
+            <KpiTile label="Tenure"      value={loan!.loanTenure ? `${loan!.loanTenure} mo` : "—"} icon={Calendar} color="#4ade80" sub="Months" />
+            <KpiTile label="Loan Type"   value={V(loan!.loanType) ?? "—"} icon={LoanIcon} color="#c084fc" sub="Category" />
+            <KpiTile label="App. ID"     value={`#${loan!._id.slice(-8).toUpperCase()}`} icon={Hash} color="#fbbf24" sub="Reference" />
           </div>
         </div>
 
-        {/* Metric tiles */}
-        <div className="bg-white border-t border-slate-100 px-6 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Tile label="Loan Amount" value={INR(loan!.loanAmount)}              icon={CreditCard} color="#066a9c" />
-          <Tile label="Tenure"      value={loan!.loanTenure ? `${loan!.loanTenure} months` : "—"} icon={Calendar} color="#0d9488" />
-          <Tile label="Loan Type"   value={V(loan!.loanType)}                  icon={Briefcase}  color="#7c3aed" />
-          <Tile label="App. ID"     value={`#${loan!._id.slice(-8).toUpperCase()}`} icon={Hash}   color="#d97706" />
-        </div>
-      </div>
+        {/* ── Section navigation (sticky) ── */}
+        <nav className="sticky top-[72px] z-20">
+          <div className="bg-white/95 backdrop-blur border border-slate-200 rounded-2xl shadow-sm px-2 py-1.5 flex items-center gap-1 overflow-x-auto">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 shrink-0">
+              Jump to
+            </span>
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => jumpTo(item.id)}
+                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  activeSection === item.id ? "text-white shadow-sm" : "text-slate-500 hover:bg-slate-100"
+                }`}
+                style={activeSection === item.id
+                  ? { background: "linear-gradient(135deg,#066a9c,#26ae90)" }
+                  : undefined}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </nav>
 
-      {/* ── Detail sections ── */}
-      <div className="space-y-4">
+        {/* ════════════ APPLICANT INFO ═══════════════════════════════════════ */}
+        <InfoSection id="applicant" icon={User} accent="#066a9c" title="Applicant Information" subtitle="Personal identification and contact details">
+          <DataField label="Full Name"         value={V(loan!.fullName)} />
+          <DataField label="Mobile Number"     value={V(loan!.mobile)} mono />
+          <DataField label="Email Address"     value={V(loan!.email)} />
+          <DataField label="Date of Birth"     value={DT(loan!.dob)} />
+          <DataField label="PAN Number"        value={V(loan!.panNumber)} mono />
+          <DataField label="Residence Status"  value={V(loan!.residenceStatus)} />
+          <DataField label="State"             value={V(loan!.state)} />
+          <DataField label="City"              value={V(loan!.city)} />
+          <DataField label="Pincode"           value={V(loan!.pincode)} mono />
+        </InfoSection>
 
-        {/* Applicant */}
-        <Card title="Applicant Information" icon={User} color="#066a9c">
-          <F label="Full Name"        value={V(loan!.fullName)} />
-          <F label="Mobile"           value={V(loan!.mobile)} mono />
-          <F label="Email"            value={V(loan!.email)} />
-          <F label="Date of Birth"    value={DT(loan!.dob)} />
-          <F label="PAN Number"       value={V(loan!.panNumber)} mono />
-          <F label="Residence Status" value={V(loan!.residenceStatus)} />
-          <F label="State"            value={V(loan!.state)} />
-          <F label="City"             value={V(loan!.city)} />
-          <F label="Pincode"          value={V(loan!.pincode)} mono />
-        </Card>
+        {/* ════════════ EMPLOYMENT — adapts to employmentType ══════════════ */}
+        {flags.salaried && (
+          <InfoSection id="employment" icon={Briefcase} accent="#0d9488" title="Employment & Salary" subtitle="Salaried employment details">
+            <DataField label="Employment Type"    value={V(loan!.employmentType)} />
+            <DataField label="Company Name"       value={V(loan!.companyName)} />
+            <DataField label="Company Type"
+              value={loan!.companyType === "Other" ? `Other — ${V(loan!.companyTypeOther) ?? ""}` : V(loan!.companyType)} />
+            <DataField label="Monthly Salary"     value={INR(loan!.monthlySalary)} highlight />
+            <DataField label="Salary Received As"
+              value={loan!.salaryReceivedAs === "Other" ? `Other — ${V(loan!.salaryReceivedAsOther) ?? ""}` : V(loan!.salaryReceivedAs)} />
+            <DataField label="Salary Bank"
+              value={loan!.salaryBankName === "Other" ? `Other — ${V(loan!.salaryBankOther) ?? ""}` : V(loan!.salaryBankName)} />
+          </InfoSection>
+        )}
 
-        {isBiz ? (
+        {flags.business && (
           <>
-            <Card title="Business Information" icon={Building2} color="#0d9488">
-              <F label="Business Name"    value={V(loan!.businessName)} />
-              <F label="Business Type"    value={V(loan!.businessType)} />
-              <F label="Business Vintage" value={V(loan!.businessVintage)} />
-              <F label="GST Number"       value={V(loan!.gstNumber)} mono />
-              <F label="Udyam Number"     value={V(loan!.udyamNumber)} mono />
-              <F label="Company Name"     value={V(loan!.companyName)} />
-              <F label="Company Type"
-                value={loan!.companyType === "Other" ? `Other — ${V(loan!.companyTypeOther)}` : V(loan!.companyType)} />
-            </Card>
-
-            <Card title="Financial Details" icon={TrendingDown} color="#d97706">
-              <F label="Current Year Turnover"    value={INR(loan!.currentYearTurnover)} />
-              <F label="Prior Year Turnover"      value={INR(loan!.priorYearTurnover)} />
-              <F label="Last Year Turnover"       value={INR(loan!.lastYearTurnover)} />
-              <F label="Current Year Net Income"  value={INR(loan!.currentYearNetIncome)} />
-              <F label="Previous Year Net Income" value={INR(loan!.previousYearNetIncome)} />
-            </Card>
+            <InfoSection id="business" icon={Building2} accent="#0d9488" title="Business Details" subtitle="Self-employed business information">
+              <DataField label="Employment Type"          value={V(loan!.employmentType)} />
+              <DataField label="Business Name"            value={V(loan!.businessName)} />
+              <DataField label="Business Type"
+                value={loan!.businessType === "Other" ? `Other — ${V(loan!.businessTypeOther) ?? ""}` : V(loan!.businessType)} />
+              <DataField label="Nature of Business"
+                value={loan!.natureOfBusiness === "Other" ? `Other — ${V(loan!.natureOfBusinessOther) ?? ""}` : V(loan!.natureOfBusiness)} />
+              <DataField label="Industry Type"
+                value={loan!.industryType === "Other" ? `Other — ${V(loan!.industryTypeOther) ?? ""}` : V(loan!.industryType)} />
+              {V(loan!.subIndustry) && <DataField label="Sub Industry" value={V(loan!.subIndustry)} />}
+              <DataField label="GST Number"               value={V(loan!.gstNumber)} mono />
+              <DataField label="Company PAN"              value={V(loan!.companyPanNumber)} mono />
+              <DataField label="Business Established"     value={DT(loan!.businessEstablishedDate)} />
+              <DataField label="Business Place Status"
+                value={loan!.businessPlaceStatus === "Other" ? `Other — ${V(loan!.businessPlaceStatusOther) ?? ""}` : V(loan!.businessPlaceStatus)} />
+              <DataField label="Business State"           value={V(loan!.businessState)} />
+              <DataField label="Business City"            value={V(loan!.businessCity)} />
+              <DataField label="Business Pincode"         value={V(loan!.businessPincode)} mono />
+              <TagList   label="Transaction Banks"        items={transactionBanks} />
+            </InfoSection>
+            <InfoSection id="business-financials" icon={TrendingDown} accent="#d97706" title="Business Financials" subtitle="Annual turnover and net income">
+              <DataField label="Last Year Turnover"       value={INR(loan!.lastYearTurnover)} highlight />
+              <DataField label="Last 2 Years Turnover"    value={INR(loan!.last2YearsTurnover)} />
+              <DataField label="Last Year Net Income"     value={INR(loan!.lastYearNetIncome)} highlight />
+              <DataField label="Last 2 Years Net Income"  value={INR(loan!.last2YearsNetIncome)} />
+            </InfoSection>
           </>
-        ) : (
-          <Card title="Employment & Salary" icon={Briefcase} color="#0d9488">
-            <F label="Employment Type" value={V(loan!.employmentType)} />
-            <F label="Company Name"    value={V(loan!.companyName)} />
-            <F label="Company Type"
-              value={loan!.companyType === "Other" ? `Other — ${V(loan!.companyTypeOther)}` : V(loan!.companyType)} />
-            <F label="Monthly Salary"     value={INR(loan!.monthlySalary)} />
-            <F label="Salary Received As"
-              value={loan!.salaryReceivedAs === "Other" ? `Other — ${V(loan!.salaryReceivedAsOther)}` : V(loan!.salaryReceivedAs)} />
-            <F label="Salary Bank"
-              value={loan!.salaryBankName === "Other" ? `Other — ${V(loan!.salaryBankOther)}` : V(loan!.salaryBankName)} />
-          </Card>
         )}
 
-        {/* Liabilities */}
-        <Card title="Existing Liabilities" icon={TrendingDown} color="#dc2626">
-          <F label="Existing Monthly EMI"  value={INR(loan!.existingEMI)} />
-          <F label="Existing Loan Amount"  value={INR(loan!.existingLoanAmount)} />
-          <F label="Existing Banks"
-            value={(loan!.existingBanks?.length || loan!.otherBankList?.length)
-              ? [...(loan!.existingBanks ?? []), ...(loan!.otherBankList ?? [])].join(", ")
-              : "None"} />
-          <F label="Existing Loan Types"
-            value={(loan!.existingLoanTypes?.length || loan!.otherLoanList?.length)
-              ? [...(loan!.existingLoanTypes ?? []), ...(loan!.otherLoanList ?? [])].join(", ")
-              : "None"} />
-        </Card>
+        {flags.professional && (
+          <>
+            <InfoSection id="professional" icon={Briefcase} accent="#0d9488" title="Professional Details" subtitle="Self-employed professional information">
+              <DataField label="Employment Type"       value={V(loan!.employmentType)} />
+              <DataField label="Profession"
+                value={loan!.profession === "Other" ? `Other — ${V(loan!.professionOther) ?? ""}` : V(loan!.profession)} />
+              <DataField label="Business Place Status"
+                value={loan!.businessPlaceStatus === "Other" ? `Other — ${V(loan!.businessPlaceStatusOther) ?? ""}` : V(loan!.businessPlaceStatus)} />
+              <DataField label="Business State"        value={V(loan!.businessState)} />
+              <DataField label="Business City"         value={V(loan!.businessCity)} />
+              <DataField label="Business Pincode"      value={V(loan!.businessPincode)} mono />
+              <TagList   label="Transaction Banks"     items={transactionBanks} />
+            </InfoSection>
+            <InfoSection id="professional-financials" icon={TrendingDown} accent="#d97706" title="Professional Financials" subtitle="Annual turnover and net income">
+              <DataField label="Current Year Turnover"    value={INR(loan!.currentYearTurnover)} highlight />
+              <DataField label="Prior Year Turnover"      value={INR(loan!.priorYearTurnover)} />
+              <DataField label="Current Year Net Income"  value={INR(loan!.currentYearNetIncome)} highlight />
+              <DataField label="Previous Year Net Income" value={INR(loan!.previousYearNetIncome)} />
+            </InfoSection>
+          </>
+        )}
 
-        {/* Footer meta */}
-        <MetaRow items={[
-          { label: "Application ID", value: loan!._id },
-          { label: "Applied On",     value: DT(loan!.createdAt) },
-          { label: "Last Updated",   value: DT(loan!.updatedAt) },
-          { label: "Status",         value: loan!.status },
-        ]} />
+        {/* ════════════ LEASE PROPERTY (Lease Rental Discounting) ══════════ */}
+        {flags.lease && (
+          <InfoSection id="lease-property" icon={Building2} accent="#0891b2" title="Lease Property Details" subtitle="Property being leased and rental income">
+            <DataField label="Monthly Lease Income"   value={INR(loan!.monthlyLeaseIncome)} highlight />
+            <DataField label="Total Lease Amount"     value={INR(loan!.totalLeaseAmount)} />
+            <DataField label="Lease Duration"         value={loan!.leasePropertyDuration ? `${loan!.leasePropertyDuration} years` : null} />
+            <DataField label="Property Market Value"  value={INR(loan!.leasePropertyMarketValue)} highlight />
+            <DataField label="Property Age"           value={loan!.leasePropertyAge ? `${loan!.leasePropertyAge} years` : null} />
+            <DataField label="Property State"         value={V(loan!.leasePropertyState)} />
+            <DataField label="Property City"          value={V(loan!.leasePropertyCity)} />
+            <DataField label="Property Pincode"       value={V(loan!.leasePropertyPincode)} mono />
+          </InfoSection>
+        )}
+
+        {/* ════════════ BUYING PROPERTY (commercial purchase / LAP) ═════════ */}
+        {flags.buyingProperty && (
+          <InfoSection id="buying-property" icon={Building2} accent="#7c3aed" title="Property Details" subtitle="Property being purchased / mortgaged">
+            <DataField label="Property Type"
+              value={loan!.buyingPropertyType === "Other" ? `Other — ${V(loan!.buyingPropertyTypeOther) ?? ""}` : V(loan!.buyingPropertyType)} />
+            <DataField label="Market Value"   value={INR(loan!.buyingPropertyMarketValue)} highlight />
+            <DataField label="Property Age"   value={V(loan!.buyingPropertyAge) ? `${loan!.buyingPropertyAge} years` : null} />
+            <DataField label="State"          value={V(loan!.buyingPropertyState)} />
+            <DataField label="City"           value={V(loan!.buyingPropertyCity)} />
+            <DataField label="Pincode"        value={V(loan!.buyingPropertyPincode)} mono />
+          </InfoSection>
+        )}
+
+        {/* ════════════ BUSINESS (standalone business-loan type) ════════════ */}
+        {flags.isBiz && (
+          <>
+            <InfoSection id="biz-info" icon={Building2} accent="#0d9488" title="Business Information" subtitle="Company and registration details">
+              <DataField label="Business Name"    value={V(loan!.businessName)} />
+              <DataField label="Business Type"    value={V(loan!.businessType)} />
+              <DataField label="Business Vintage" value={V(loan!.businessVintage)} />
+              <DataField label="GST Number"       value={V(loan!.gstNumber)} mono />
+              <DataField label="Udyam Number"     value={V(loan!.udyamNumber)} mono />
+              <DataField label="Company Name"     value={V(loan!.companyName)} />
+              <DataField label="Company Type"
+                value={loan!.companyType === "Other" ? `Other — ${V(loan!.companyTypeOther) ?? ""}` : V(loan!.companyType)} />
+            </InfoSection>
+            <InfoSection id="biz-financials" icon={TrendingDown} accent="#d97706" title="Financial Details" subtitle="Annual turnover and net income">
+              <DataField label="Current Year Turnover"    value={INR(loan!.currentYearTurnover)} highlight />
+              <DataField label="Prior Year Turnover"      value={INR(loan!.priorYearTurnover)} />
+              <DataField label="Last Year Turnover"       value={INR(loan!.lastYearTurnover)} />
+              <DataField label="Current Year Net Income"  value={INR(loan!.currentYearNetIncome)} highlight />
+              <DataField label="Previous Year Net Income" value={INR(loan!.previousYearNetIncome)} />
+            </InfoSection>
+          </>
+        )}
+
+        {/* ════════════ EXTRA FIELDS (loan-type specific) ════════════════════
+            Dynamically renders any field returned by the API that is not
+            already shown in the sections above — covers project loan,
+            car loan, education loan, LAP, balance transfer, etc.          */}
+        {extraFields.length > 0 && (
+          <InfoSection id="additional" icon={LayoutList} accent="#7c3aed" title="Additional Details" subtitle={`${label}-specific information`}>
+            {extraFields.map(([key, val]) => {
+              if (Array.isArray(val)) {
+                return (
+                  <TagList
+                    key={key}
+                    label={toLabel(key)}
+                    items={(val as unknown[]).map(String).filter(Boolean)}
+                  />
+                );
+              }
+              const formatted =
+                typeof val === "number" && key.toLowerCase().includes("amount") ? INR(val as number)
+                : typeof val === "number" && key.toLowerCase().includes("value")  ? INR(val as number)
+                : typeof val === "number" && key.toLowerCase().includes("cost")   ? INR(val as number)
+                : typeof val === "number" && key.toLowerCase().includes("price")  ? INR(val as number)
+                : V(val as string | number | boolean);
+              return (
+                <DataField
+                  key={key}
+                  label={toLabel(key)}
+                  value={formatted}
+                  mono={typeof val === "number"}
+                />
+              );
+            })}
+          </InfoSection>
+        )}
+
+        {/* ════════════ LIABILITIES ═════════════════════════════════════════ */}
+        {flags.liabilities && (
+          <InfoSection id="liabilities" icon={CreditCard} accent="#dc2626" title="Existing Liabilities" subtitle="Current running loans and monthly EMI obligations">
+            <DataField label="Monthly EMI"            value={INR(loan!.existingEMI)} />
+            <DataField label="Total Loan Outstanding" value={INR(loan!.existingLoanAmount)} />
+            <TagList label="Banks with Existing Loans" items={existingBanks} />
+            <TagList label="Existing Loan Types"        items={existingLoans} />
+          </InfoSection>
+        )}
+
+        {/* ════════════ FOOTER META ═════════════════════════════════════════ */}
+        <div id="timeline" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden scroll-mt-28">
+          <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Application Timeline</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-slate-100">
+            {[
+              { icon: Hash,       label: "Application ID", value: loan!._id,                  mono: true  },
+              { icon: Calendar,   label: "Applied On",     value: DT(loan!.createdAt) ?? "—", mono: false },
+              { icon: RefreshCw,  label: "Last Updated",   value: DT(loan!.updatedAt) ?? "—", mono: false },
+              { icon: StatusIcon, label: "Current Status", value: loan!.status,               mono: false },
+            ].map(({ icon: Icon, label: l, value: v, mono }) => (
+              <div key={l} className="px-5 py-4 flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                  <Icon size={13} className="text-slate-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{l}</p>
+                  <p className={`text-xs font-semibold text-slate-700 break-all ${mono ? "font-mono" : ""}`}>{v}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ════════════ DANGER ZONE ═════════════════════════════════════════ */}
+        <div className="bg-white rounded-2xl border border-red-200 p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h3>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-sm text-slate-500">
+              Permanently delete this application and all of its saved details. This cannot be undone.
+            </p>
+            <button
+              onClick={() => setPendingDelete(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 rounded-xl transition"
+            >
+              <Trash2 size={15} />
+              Delete Application
+            </button>
+          </div>
+        </div>
 
       </div>
+
+      {pendingDelete && loan && (
+        <ConfirmDialog
+          title={`Delete ${label} application?`}
+          message={`Applicant: ${loan.fullName ?? "—"} · ID: ${loan._id}. Their saved form details will be removed permanently.`}
+          confirmText={loan._id.slice(-8).toUpperCase()}
+          confirmLabel="Delete Application"
+          isSubmitting={isDeleting}
+          onConfirm={handleDelete}
+          onCancel={() => setPendingDelete(false)}
+        />
+      )}
     </AdminLayout>
   );
 };

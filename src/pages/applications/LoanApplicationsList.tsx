@@ -106,7 +106,8 @@ const LoanApplicationsList = () => {
         (l.fullName ?? "").toLowerCase().includes(search.toLowerCase()) ||
         (l.mobile ?? "").includes(search) ||
         l._id.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === "All" || l.status === statusFilter;
+      const matchStatus = statusFilter === "All" ||
+        (l.status ?? "").toLowerCase() === statusFilter.toLowerCase();
       return matchSearch && matchStatus;
     });
   }, [loans, search, statusFilter]);
@@ -122,7 +123,10 @@ const LoanApplicationsList = () => {
   const counts = useMemo(() => {
     if (!loans) return {};
     return loans.reduce<Record<string, number>>((acc, l) => {
-      acc[l.status] = (acc[l.status] ?? 0) + 1;
+      const matchKey = Object.keys(STATUS_CFG).find(
+        (k) => k.toLowerCase() === (l.status ?? "").toLowerCase()
+      ) ?? l.status;
+      acc[matchKey] = (acc[matchKey] ?? 0) + 1;
       return acc;
     }, {});
   }, [loans]);
@@ -246,7 +250,10 @@ const LoanApplicationsList = () => {
                 </thead>
                 <tbody>
                   {pageLoans.map((loan, i) => {
-                    const cfg = STATUS_CFG[loan.status];
+                    const statusKey = Object.keys(STATUS_CFG).find(
+                      (k) => k.toLowerCase() === (loan.status ?? "").toLowerCase()
+                    ) ?? loan.status;
+                    const cfg = STATUS_CFG[statusKey];
                     const rowNum = (safePage - 1) * PAGE_SIZE + i + 1;
                     return (
                       <tr key={loan._id}

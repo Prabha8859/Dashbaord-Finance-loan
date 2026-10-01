@@ -11,7 +11,7 @@ import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
 import PersonalLoanDetail from "./pages/applications/PersonalLoanDetail";
 import CustomersList from "./pages/customers/CustomersList";
-import StatesCitiesManager from "./pages/masters/StatesCitiesManager";
+import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
 
 function App() {
   return (
@@ -58,11 +58,27 @@ function App() {
               }
             />
 
+            {/* Legacy URL kept alive so old bookmarks keep working */}
             <Route
               path="/masters/states-cities"
+              element={<Navigate to="/masters/locations" replace />}
+            />
+
+            <Route
+              path="/masters/locations"
               element={
                 <ProtectedRoute>
-                  <StatesCitiesManager />
+                  <LocationMasterAdmin />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Type-addressed master detail — stable across re-seeds */}
+            <Route
+              path="/masters/type/:type"
+              element={
+                <ProtectedRoute>
+                  <MasterDetail />
                 </ProtectedRoute>
               }
             />

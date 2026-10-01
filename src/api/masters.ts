@@ -44,18 +44,20 @@ export { getApiErrorMessage } from "../utils/apiError";
 
 /** GET /api/admin/masters — summary list { masters: [{_id, type, label, kind, count}] } */
 export const getMasters = async (): Promise<MasterSummary[]> => {
-  const res = await axiosInstance.get<{ success: boolean; masters: MasterSummary[] }>(
+  const res = await axiosInstance.get<{ success?: boolean; masters?: MasterSummary[]; data?: MasterSummary[] }>(
     "/masters"
   );
-  return res.data.masters;
+  if (Array.isArray(res.data)) return res.data as MasterSummary[];
+  return res.data?.masters ?? res.data?.data ?? [];
 };
 
 /** GET /api/admin/masters/:id — full detail with values */
 export const getMaster = async (id: string): Promise<MasterDetail> => {
-  const res = await axiosInstance.get<{ success: boolean; master: MasterDetail }>(
+  const res = await axiosInstance.get<{ success?: boolean; master?: MasterDetail; data?: MasterDetail }>(
     `/masters/${id}`
   );
-  return res.data.master;
+  const item = res.data?.master ?? res.data?.data ?? res.data;
+  return item as MasterDetail;
 };
 
 /** POST /api/admin/masters — create a new master */
@@ -129,7 +131,57 @@ export const deleteCity = async (state: string, city: string): Promise<void> => 
   );
 };
 
-// ── Per-value Bank CRUD ───────────────────────────────────────────────────────
+// ── Banks API ─────────────────────────────────────────────────────────────────
+//
+// KEEP these on purpose. The "custom bank" flow — a bank that is not in the
+// list yet gets added by the admin (or by a loan form sending a self-typed bank) —
+// runs through the single-value routes here (POST to append one, PUT to rename
+// one, DELETE to drop one). The admin Bank Details page saves the whole list
+// through PUT /masters/banks, so these stay as the fine-grained alternative and
+// must not be treated as dead code.
+
+/**
+ * GET /api/admin/masters/banks
+ * Returns the full banks list.
+ */
+export const getBanks = async (): Promise<string[]> => {
+  const res = await axiosInstance.get<{
+    success: boolean;
+    data?: string[];
+    banks?: string[];
+    values?: string[];
+  }>("/masters/banks");
+  const list = res.data.data ?? res.data.banks ?? res.data.values;
+  if (!Array.isArray(list)) throw new Error("Unexpected response from GET /masters/banks");
+  return list;
+};
+
+/**
+ * POST /api/admin/masters/banks
+ * Create / initialise the banks list, or append custom bank(s).
+ * Body: { banks: ["A", "B", ...] }  — initialize
+ *       { value: "Kotak" }          — add one custom bank
+ */
+export const createBanks = async (banks: string[]): Promise<void> => {
+  await axiosInstance.post("/masters/banks", { banks });
+};
+
+/**
+ * PUT /api/admin/masters/banks
+ * Replace the entire banks list.
+ * Body: { values: ["A", "B", ...] }
+ */
+export const replaceBanks = async (values: string[]): Promise<void> => {
+  await axiosInstance.put("/masters/banks", { values });
+};
+
+/**
+ * DELETE /api/admin/masters/banks/:value
+ * Remove a single bank entry by value.
+ */
+export const deleteBankValue = async (value: string): Promise<void> => {
+  await axiosInstance.delete(`/masters/banks/${encodeURIComponent(value)}`);
+};
 
 /** PUT /api/admin/masters/banks/:value — rename a single bank entry */
 export const updateBankValue = async (oldValue: string, newValue: string): Promise<void> => {
@@ -139,7 +191,54 @@ export const updateBankValue = async (oldValue: string, newValue: string): Promi
   );
 };
 
-/** DELETE /api/admin/masters/banks/:value — remove a single bank entry */
-export const deleteBankValue = async (value: string): Promise<void> => {
-  await axiosInstance.delete(`/masters/banks/${encodeURIComponent(value)}`);
+// ── Resolve a master by its type key ──────────────────────────────────────────
+
+/**
+ * Resolve a master from its stable `type` key (e.g. "banks", "statesByCountry").
+ *
+ * The admin API only needs the generic master CRUD, so this resolves in two
+ * steps: `GET /masters` (summary list) → find the entry whose `type` matches →
+ * `GET /masters/:id` (full detail). No dedicated `/masters/type/:type` route is
+ * required; type-addressed URLs are a client-side concern only.
+ */
+export const getMasterByType = async (type: string): Promise<MasterDetail> => {
+  const list = await getMasters();
+  const found = list.find((m) => m.type === type);
+  if (!found) {
+    throw Object.assign(new Error(`No master found for type "${type}".`), {
+      response: { status: 404, data: { message: `No master found for type "${type}".` } },
+    });
+  }
+  return getMaster(found._id);
+};
+
+// ── Bootstrap helpers ─────────────────────────────────────────────────────────
+
+export interface MasterDef {
+  type: string;
+  label: string;
+  /** Initial values used only when the master does not exist yet. */
+  values: MasterValues;
+}
+
+/**
+ * Loads several masters in one pass and creates any that are missing.
+ * Avoids N+1 calls: the summary list is fetched once, then each master is read
+ * (or created) individually. Returns a map keyed by `type`.
+ */
+export const ensureMasters = async (
+  defs: MasterDef[]
+): Promise<Record<string, MasterDetail>> => {
+  const existing = await getMasters();
+  const byType = new Map(existing.map((m) => [m.type, m]));
+  const out: Record<string, MasterDetail> = {};
+
+  for (const def of defs) {
+    const found = byType.get(def.type);
+    out[def.type] = found
+      ? await getMaster(found._id)
+      : await createMaster({ type: def.type, label: def.label, values: def.values });
+  }
+
+  return out;
 };

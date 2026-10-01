@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Users } from "lucide-react";
+import { RefreshCw, Search, Trash2, Users } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
-import { getApiErrorMessage, getCustomers, type Customer } from "../../api/customers";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { useToast } from "../../context/ToastContext";
+import { deleteCustomer, getApiErrorMessage, getCustomers, type Customer } from "../../api/customers";
 
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 const CustomersList = () => {
+  const { showToast } = useToast();
+
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<Customer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = async () => {
     setError("");
@@ -24,6 +30,24 @@ const CustomersList = () => {
   useEffect(() => {
     load();
   }, []);
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteCustomer(pendingDelete._id);
+      setCustomers((prev) =>
+        prev ? prev.filter((c) => c._id !== pendingDelete._id) : prev
+      );
+      showToast(`"${pendingDelete.name}" deleted`, "success");
+      setPendingDelete(null);
+    } catch (err) {
+      showToast(getApiErrorMessage(err, "Unable to delete this customer."), "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!customers) return [];
@@ -95,6 +119,7 @@ const CustomersList = () => {
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Last Login</th>
                   <th className="px-4 py-3">Joined</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -123,6 +148,17 @@ const CustomersList = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-500">{formatDate(c.lastLogin)}</td>
                     <td className="px-4 py-3 text-slate-500">{formatDate(c.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => setPendingDelete(c)}
+                          aria-label={`Delete ${c.name}`}
+                          className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -130,6 +166,18 @@ const CustomersList = () => {
           </div>
         )}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete "${pendingDelete.name}"?`}
+          message="This permanently removes the customer account. Their loan applications are not deleted by this action."
+          confirmText={pendingDelete.email}
+          confirmLabel="Delete Customer"
+          isSubmitting={isDeleting}
+          onConfirm={handleDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </AdminLayout>
   );
 };

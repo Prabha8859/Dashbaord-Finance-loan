@@ -22,16 +22,23 @@ export { getApiErrorMessage } from "../utils/apiError";
 // ── API Calls ────────────────────────────────────────────────────────────────
 
 export const getCustomers = async (search?: string): Promise<Customer[]> => {
-  const res = await axiosInstance.get<{ success: boolean; customers: Customer[] }>(
+  const res = await axiosInstance.get<{ success?: boolean; customers?: Customer[]; data?: Customer[] }>(
     "/customers",
     { params: search ? { search } : undefined }
   );
-  return res.data.customers;
+  if (Array.isArray(res.data)) return res.data as Customer[];
+  return res.data?.customers ?? res.data?.data ?? [];
 };
 
 export const getCustomer = async (id: string): Promise<Customer> => {
-  const res = await axiosInstance.get<{ success: boolean; customer: Customer }>(
+  const res = await axiosInstance.get<{ success?: boolean; customer?: Customer; data?: Customer }>(
     `/customers/${id}`
   );
-  return res.data.customer;
+  const item = res.data?.customer ?? res.data?.data ?? res.data;
+  return item as Customer;
+};
+
+/** DELETE /api/admin/customers/:id — remove a customer account */
+export const deleteCustomer = async (id: string): Promise<void> => {
+  await axiosInstance.delete(`/customers/${id}`);
 };

@@ -13,7 +13,7 @@ export interface PersonalLoan {
   loanAmount: number;
   loanTenure: number;
 
-  // common fields
+  // ── Common applicant fields ───────────────────────────────────────────────
   fullName?: string;
   mobile?: string;
   email?: string;
@@ -23,6 +23,8 @@ export interface PersonalLoan {
   city?: string;
   pincode?: string;
   residenceStatus?: string;
+
+  // ── Employment / salary fields ────────────────────────────────────────────
   employmentType?: string;
   companyName?: string;
   companyType?: string;
@@ -32,6 +34,8 @@ export interface PersonalLoan {
   salaryReceivedAsOther?: string;
   salaryBankName?: string;
   salaryBankOther?: string;
+
+  // ── Existing liabilities ──────────────────────────────────────────────────
   existingEMI?: number;
   existingLoanAmount?: number;
   existingBanks?: string[];
@@ -39,17 +43,96 @@ export interface PersonalLoan {
   existingLoanTypes?: string[];
   otherLoanList?: string[];
 
-  // business loan fields
+  // ── Business loan fields ──────────────────────────────────────────────────
   businessName?: string;
   businessType?: string;
+  businessTypeOther?: string;
   businessVintage?: string;
+  businessEstablishedDate?: string;
+  businessState?: string;
+  businessCity?: string;
+  businessPincode?: string;
+  businessPincodeOther?: string;
+  businessPlaceStatus?: string;
+  businessPlaceStatusOther?: string;
   currentYearTurnover?: number;
   priorYearTurnover?: number;
   lastYearTurnover?: number;
+  last2YearsTurnover?: number;
   currentYearNetIncome?: number;
   previousYearNetIncome?: number;
+  lastYearNetIncome?: number;
+  last2YearsNetIncome?: number;
   gstNumber?: string;
   udyamNumber?: string;
+  companyPanNumber?: string;
+  natureOfBusiness?: string;
+  natureOfBusinessOther?: string;
+  industryType?: string;
+  industryTypeOther?: string;
+  subIndustry?: string;
+  transactionBankName?: string | { displayName: string; banks: string[] };
+  transactionBankOther?: string;
+  transactionBanks?: string[];
+
+  // ── Self Employed - Professional fields ───────────────────────────────────
+  profession?: string;
+  professionOther?: string;
+
+  // ── Project / property / commercial purchase fields ───────────────────────
+  projectName?: string;
+  projectType?: string;
+  projectCost?: number;
+  projectLocation?: string;
+  propertyType?: string;
+  propertyValue?: number;
+  propertyLocation?: string;
+  propertyAge?: string;
+  builderName?: string;
+  buyingPropertyType?: string;
+  buyingPropertyTypeOther?: string;
+  buyingPropertyMarketValue?: number;
+  buyingPropertyAge?: number;
+  buyingPropertyState?: string;
+  buyingPropertyCity?: string;
+  buyingPropertyPincode?: string;
+  buyingPropertyPincodeOther?: string;
+
+  // ── Car loan fields ───────────────────────────────────────────────────────
+  vehicleType?: string;
+  vehicleModel?: string;
+  vehicleBrand?: string;
+  vehicleYear?: string | number;
+  vehiclePrice?: number;
+  dealerName?: string;
+  isNewVehicle?: boolean;
+
+  // ── Education loan fields ─────────────────────────────────────────────────
+  courseName?: string;
+  instituteName?: string;
+  courseType?: string;
+  courseDuration?: string | number;
+  admissionStatus?: string;
+  countryOfStudy?: string;
+
+  // ── Lease Rental Discounting fields ──────────────────────────────────────
+  monthlyLeaseIncome?: number;
+  totalLeaseAmount?: number;
+  leasePropertyDuration?: number;
+  leasePropertyMarketValue?: number;
+  leasePropertyAge?: number;
+  leasePropertyState?: string;
+  leasePropertyCity?: string;
+  leasePropertyPincode?: string;
+  leasePropertyPincodeOther?: string;
+
+  // ── Credit card fields ────────────────────────────────────────────────────
+  cardType?: string;
+  creditLimit?: number;
+  annualIncome?: number;
+
+  // ── Catch-all for any extra backend fields ────────────────────────────────
+  [key: string]: unknown;
 
   status: LoanStatus;
   createdAt: string;
@@ -59,32 +142,49 @@ export interface PersonalLoan {
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 /** Extract the array from any of the common backend response shapes */
-const extractList = (data: Record<string, unknown>): PersonalLoan[] => {
-  const list = (data.data ?? data.loans ?? data.applications) as PersonalLoan[] | undefined;
-  if (!Array.isArray(list)) {
-    throw new Error(`Unexpected response shape. Keys: ${Object.keys(data).join(", ")}`);
+const extractList = (data: unknown): PersonalLoan[] => {
+  if (Array.isArray(data)) return data as PersonalLoan[];
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    const list = (obj.data ?? obj.loans ?? obj.applications) as PersonalLoan[] | undefined;
+    if (Array.isArray(list)) return list;
+    throw new Error(`Unexpected response shape. Keys: ${Object.keys(obj).join(", ")}`);
   }
-  return list;
+  throw new Error("Unexpected non-object response from API");
 };
 
 /** Extract a single item from any of the common backend response shapes */
-const extractItem = (data: Record<string, unknown>, path: string): PersonalLoan => {
-  const item = (data.data ?? data.loan ?? data.application) as PersonalLoan | undefined;
-  if (!item) {
-    throw new Error(`Unexpected response shape at ${path}. Keys: ${Object.keys(data).join(", ")}`);
+const extractItem = (data: unknown, path: string): PersonalLoan => {
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    const item = (obj.data ?? obj.loan ?? obj.application ?? (obj._id ? obj : undefined)) as PersonalLoan | undefined;
+    if (item) return item;
+    throw new Error(`Unexpected response shape at ${path}. Keys: ${Object.keys(obj).join(", ")}`);
   }
-  return item;
+  throw new Error(`Unexpected non-object response at ${path}`);
 };
 
 // ── Slug → endpoint map ───────────────────────────────────────────────────────
 // Add new loan types here when their backend routes go live.
 
 const SLUG_ENDPOINT: Record<string, string> = {
-  "personal-loan":          "/personal-loans",
-  "business-loan":          "/business-loans",
-  "home-loan":              "/home-loans",
-  "loan-against-property":  "/loan-against-properties",
-  "balance-transfer":       "/balance-transfers",
+  "personal-loan":              "/personal-loans",
+  "business-loan":              "/business-loans",
+  "home-loan":                  "/home-loans",
+  "loan-against-property":      "/loan-against-properties",
+  "balance-transfer":           "/balance-transfers",
+  "project-loan":               "/project-loans",
+  "car-loan":                   "/vehicle-loans",
+  "education-loan":             "/education-loans",
+  "credit-card":                "/credit-cards",
+  "commercial-purchase":        "/commercial-purchases",
+  "working-capital":            "/working-capitals",
+  "lease-rental-discounting":   "/lease-rental-discountings",
+  "odcc-limit":                 "/od-cc-limits",
+  "loan-against-share":         "/loan-against-shares",
+  "npa-loan":                   "/npa-loans",
+  "gold-loan":                  "/gold-loans",
+  "fdi-loan":                   "/fdi-loans",
 };
 
 /** All slugs that have a live backend endpoint */
@@ -113,12 +213,30 @@ export const getLoanBySlug = async (slug: string, id: string): Promise<PersonalL
   return extractItem(res.data, path);
 };
 
+/** Delete a single application by ID for a given loan type slug */
+export const deleteLoanBySlug = async (slug: string, id: string): Promise<void> => {
+  const endpoint = SLUG_ENDPOINT[slug];
+  if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
+
+  const path = `${endpoint}/${id}`;
+  if (import.meta.env.DEV) console.log(`[loans] DELETE ${path}`);
+  await axiosInstance.delete(path);
+};
+
 // ── Keep named exports for any direct usage ───────────────────────────────────
 
 export const getPersonalLoans  = () => getLoansBySlug("personal-loan");
 export const getBusinessLoans  = () => getLoansBySlug("business-loan");
 export const getHomeLoans      = () => getLoansBySlug("home-loan");
+export const getGoldLoans      = () => getLoansBySlug("gold-loan");
+export const getFdiLoans       = () => getLoansBySlug("fdi-loan");
 
-export const getPersonalLoan  = (id: string) => getLoanBySlug("personal-loan", id);
-export const getBusinessLoan  = (id: string) => getLoanBySlug("business-loan", id);
-export const getHomeLoan      = (id: string) => getLoanBySlug("home-loan", id);
+export const getPersonalLoan   = (id: string) => getLoanBySlug("personal-loan", id);
+export const getBusinessLoan   = (id: string) => getLoanBySlug("business-loan", id);
+export const getHomeLoan       = (id: string) => getLoanBySlug("home-loan", id);
+export const getGoldLoan       = (id: string) => getLoanBySlug("gold-loan", id);
+export const getFdiLoan        = (id: string) => getLoanBySlug("fdi-loan", id);
+
+export const deletePersonalLoan = (id: string) => deleteLoanBySlug("personal-loan", id);
+export const deleteGoldLoan     = (id: string) => deleteLoanBySlug("gold-loan", id);
+export const deleteFdiLoan      = (id: string) => deleteLoanBySlug("fdi-loan", id);

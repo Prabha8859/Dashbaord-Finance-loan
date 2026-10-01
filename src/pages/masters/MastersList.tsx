@@ -11,9 +11,7 @@ import {
   getMasters,
   type MasterSummary,
 } from "../../api/masters";
-
-// These types belong to State & City page — hide from Bank Details
-const EXCLUDE_TYPES = new Set(["states", "citiesByState"]);
+import { isLocationMasterType } from "../../constants/masterTypes";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", {
@@ -38,8 +36,8 @@ const MastersList = () => {
     setError("");
     try {
       const list = await getMasters();
-      // only show bank-type masters here
-      setMasters(list.filter(m => !EXCLUDE_TYPES.has(m.type)));
+      // only show bank-type masters here — location masters live on their own page
+      setMasters(list.filter(m => !isLocationMasterType(m.type)));
     } catch (err) {
       setError(getApiErrorMessage(err, "Unable to load masters."));
     }
@@ -149,7 +147,7 @@ const MastersList = () => {
                 {filtered.map(m => (
                   <tr key={m._id}
                     className="hover:bg-slate-50 cursor-pointer transition"
-                    onClick={() => navigate(`/masters/${m._id}`)}>
+                    onClick={() => navigate(`/masters/type/${encodeURIComponent(m.type)}`)}>
                     <td className="px-4 py-3 font-medium text-slate-800">{m.label}</td>
                     <td className="px-4 py-3">
                       <code className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
@@ -195,7 +193,7 @@ const MastersList = () => {
           onCreated={master => {
             setShowNewModal(false);
             showToast(`"${master.label}" created`, "success");
-            navigate(`/masters/${master._id}`);
+            navigate(`/masters/type/${encodeURIComponent(master.type)}`);
           }}
         />
       )}

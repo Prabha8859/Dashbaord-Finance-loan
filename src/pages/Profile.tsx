@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  KeyRound as _K, Lock, Mail, Settings,
-  Shield, User as _U, UserCircle,
+  Lock, Mail, Settings,
+  Shield, UserCircle,
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import { useAuth } from "../context/AuthContext";
@@ -54,6 +54,13 @@ const ProfileTab = () => {
   const [email, setEmail] = useState(admin?.email ?? "");
   const [errors, setErrors]       = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (admin) {
+      setName(admin.name ?? "");
+      setEmail(admin.email ?? "");
+    }
+  }, [admin]);
 
   const isDirty = name.trim() !== (admin?.name ?? "") || email.trim() !== (admin?.email ?? "");
 

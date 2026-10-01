@@ -46,8 +46,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setAdmin(res.admin);
           localStorage.setItem("admin_user", JSON.stringify(res.admin));
         })
-        .catch(() => {
-          logout();
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response?.status;
+          if (status === 401 || status === 403) {
+            logout();
+          }
         })
         .finally(() => setIsLoading(false));
     } else {

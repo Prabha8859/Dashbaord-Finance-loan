@@ -21,8 +21,8 @@ const getInitials = (name?: string) => {
 };
 
 const MASTERS_LINKS = [
-  { to: "/masters",               label: "Bank Details", icon: Database },
-  { to: "/masters/states-cities", label: "State & City", icon: Globe },
+  { to: "/masters",           label: "Bank Details",          icon: Database },
+  { to: "/masters/locations", label: "Location Master",       icon: Globe },
 ];
 
 // ── Loan type icon + color map ────────────────────────────────────────────────
@@ -45,6 +45,9 @@ const LOAN_TYPE_CONFIG: Record<string, {
   "lease-rental-discounting": { icon: Wallet,       color: "#a3e635", bg: "rgba(163,230,53,0.15)"  },
   "odcc-limit":               { icon: Coins,        color: "#facc15", bg: "rgba(250,204,21,0.15)"  },
   "loan-against-share":       { icon: Globe,        color: "#67e8f9", bg: "rgba(103,232,249,0.15)" },
+  "npa-loan":                 { icon: FileText,     color: "#fb7185", bg: "rgba(251,113,133,0.15)" },
+  "gold-loan":                { icon: Coins,        color: "#fbbf24", bg: "rgba(251,191,36,0.15)"  },
+  "fdi-loan":                 { icon: Globe,        color: "#38bdf8", bg: "rgba(56,189,248,0.15)"  },
 };
 
 // ── Nav helpers ───────────────────────────────────────────────────────────────
@@ -139,6 +142,14 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 
   const [mastersOpen,      setMastersOpen]      = useState(isOnMasters);
   const [applicationsOpen, setApplicationsOpen] = useState(isOnApplications);
+
+  useEffect(() => {
+    if (isOnMasters) setMastersOpen(true);
+  }, [isOnMasters]);
+
+  useEffect(() => {
+    if (isOnApplications) setApplicationsOpen(true);
+  }, [isOnApplications]);
 
   const handleLogout  = () => { logout(); navigate("/login", { replace: true }); };
   const handleProfile = () => navigate("/profile");

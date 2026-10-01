@@ -10,7 +10,9 @@ import {
   deleteMaster,
   getApiErrorMessage,
   getMaster,
+  getMasterByType,
   isGroupedValues,
+  replaceBanks,
   updateMasterLabel,
   updateMasterValues,
   type MasterDetail as MasterDetailType,
@@ -21,7 +23,8 @@ import {
 import { detectNumeric, isGroupedValid, isListValid } from "../../utils/masterValidation";
 
 const MasterDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  // Reachable two ways: /masters/:id (Mongo id) or /masters/type/:type (stable type key).
+  const { id, type } = useParams<{ id?: string; type?: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -44,12 +47,12 @@ const MasterDetail = () => {
   // ── Load ─────────────────────────────────────────────────────────────────────
 
   const load = async () => {
-    if (!id) return;
+    if (!id && !type) return;
     setLoadError("");
     setNotFound(false);
     setMaster(null);
     try {
-      const data = await getMaster(id);
+      const data = id ? await getMaster(id) : await getMasterByType(type!);
       setMaster(data);
       setValuesDraft(data.values);
       setSelectedGroup(
@@ -68,7 +71,7 @@ const MasterDetail = () => {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, type]);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
@@ -146,9 +149,16 @@ const MasterDetail = () => {
     if (!master || valuesDraft === null || !isValid) return;
     setSavingValues(true);
     try {
-      const updated = await updateMasterValues(master._id, valuesDraft);
-      setMaster(updated);
-      setValuesDraft(updated.values);
+      // Banks master uses dedicated PUT /masters/banks endpoint
+      if (master.type === "banks") {
+        await replaceBanks(valuesDraft as string[]);
+        setMaster(prev => prev ? { ...prev, values: valuesDraft } : prev);
+        setValuesDraft(valuesDraft);
+      } else {
+        const updated = await updateMasterValues(master._id, valuesDraft);
+        setMaster(updated);
+        setValuesDraft(updated.values);
+      }
       showToast("Values saved", "success");
     } catch (err) {
       showToast(getApiErrorMessage(err, "Unable to save values."), "error");
