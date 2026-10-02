@@ -15,7 +15,8 @@ export type LoanTypeSlug =
   | "loan-against-share"
   | "npa-loan"
   | "gold-loan"
-  | "fdi-loan";
+  | "fdi-loan"
+  | "film-funding";
 
 export interface LoanTypeDef {
   slug: LoanTypeSlug;
@@ -40,6 +41,7 @@ export const LOAN_TYPES: LoanTypeDef[] = [
   { slug: "npa-loan", label: "NPA Loan" },
   { slug: "gold-loan", label: "Gold Loan" },
   { slug: "fdi-loan", label: "FDI Loan" },
+  { slug: "film-funding", label: "Film Funding" },
 ];
 
 export const getLoanTypeLabel = (slug: string): string =>

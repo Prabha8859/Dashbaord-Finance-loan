@@ -1,4 +1,5 @@
 import axiosInstance from "./axiosInstance";
+import type { PersonalLoan } from "./personalLoans";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,12 @@ export interface Customer {
   lastLogin: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CustomerApplicationGroup {
+  product: string;
+  count: number;
+  applications: PersonalLoan[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -36,6 +43,20 @@ export const getCustomer = async (id: string): Promise<Customer> => {
   );
   const item = res.data?.customer ?? res.data?.data ?? res.data;
   return item as Customer;
+};
+
+/** Fetch every loan application submitted by a customer, grouped by product. */
+export const getCustomerApplications = async (
+  id: string
+): Promise<CustomerApplicationGroup[]> => {
+  const res = await axiosInstance.get<{
+    success?: boolean;
+    data?: CustomerApplicationGroup[];
+  }>(`/customers/${id}/applications`);
+  if (!Array.isArray(res.data?.data)) {
+    throw new Error("Unexpected response while loading customer applications.");
+  }
+  return res.data.data;
 };
 
 /** DELETE /api/admin/customers/:id — remove a customer account */

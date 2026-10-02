@@ -9,7 +9,7 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import MastersList from "./pages/masters/MastersList";
 import MasterDetail from "./pages/masters/MasterDetail";
 import LoanApplicationsList from "./pages/applications/LoanApplicationsList";
-import PersonalLoanDetail from "./pages/applications/PersonalLoanDetail";
+import LoanApplicationDetail from "./pages/applications/LoanApplicationDetail";
 import CustomersList from "./pages/customers/CustomersList";
 import LocationMasterAdmin from "./pages/masters/LocationMasterAdmin";
 
@@ -96,7 +96,7 @@ function App() {
               path="/applications/:loanType/:id"
               element={
                 <ProtectedRoute>
-                  <PersonalLoanDetail />
+                  <LoanApplicationDetail />
                 </ProtectedRoute>
               }
             />

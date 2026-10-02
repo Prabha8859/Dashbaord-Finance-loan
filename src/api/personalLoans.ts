@@ -185,6 +185,7 @@ const SLUG_ENDPOINT: Record<string, string> = {
   "npa-loan":                   "/npa-loans",
   "gold-loan":                  "/gold-loans",
   "fdi-loan":                   "/fdi-loans",
+  "film-funding":          "/film-fundings",
 };
 
 /** All slugs that have a live backend endpoint */
@@ -210,6 +211,21 @@ export const getLoanBySlug = async (slug: string, id: string): Promise<PersonalL
   const path = `${endpoint}/${id}`;
   const res = await axiosInstance.get<Record<string, unknown>>(path);
   if (import.meta.env.DEV) console.log(`[loans] GET ${path}:`, res.data);
+  return extractItem(res.data, path);
+};
+
+/** Update an application's status using the shared admin status endpoint. */
+export const updateLoanStatusBySlug = async (
+  slug: string,
+  id: string,
+  status: LoanStatus,
+  note = ""
+): Promise<PersonalLoan> => {
+  const endpoint = SLUG_ENDPOINT[slug];
+  if (!endpoint) throw new Error(`No endpoint mapped for slug: ${slug}`);
+
+  const path = `${endpoint}/${id}/status`;
+  const res = await axiosInstance.patch<Record<string, unknown>>(path, { status, note });
   return extractItem(res.data, path);
 };
 

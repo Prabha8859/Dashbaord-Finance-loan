@@ -62,44 +62,34 @@ const useActiveSection = (ids: string[]) => {
   return active;
 };
 
-// ── Fields to skip in the "extra" section (already shown elsewhere) ──────────
-const KNOWN_FIELDS = new Set([
-  "_id","user","__v","loanType","loanAmount","loanTenure","status","createdAt","updatedAt",
-  // applicant
-  "fullName","mobile","email","dob","panNumber","state","city","pincode","residenceStatus",
-  // salaried employment
-  "employmentType","companyName","companyType","companyTypeOther",
-  "monthlySalary","salaryReceivedAs","salaryReceivedAsOther","salaryBankName","salaryBankOther",
-  // liabilities
-  "existingEMI","existingLoanAmount","existingBanks","otherBankList","existingLoanTypes","otherLoanList",
-  // business loan
-  "businessName","businessType","businessTypeOther","businessVintage","businessEstablishedDate",
-  "businessState","businessCity","businessPincode","businessPincodeOther",
-  "businessPlaceStatus","businessPlaceStatusOther",
-  "currentYearTurnover","priorYearTurnover","lastYearTurnover","last2YearsTurnover",
-  "currentYearNetIncome","previousYearNetIncome","lastYearNetIncome","last2YearsNetIncome",
-  "gstNumber","udyamNumber","companyPanNumber",
-  "natureOfBusiness","natureOfBusinessOther","industryType","industryTypeOther","subIndustry",
-  // self-employed professional
-  "profession","professionOther",
-  // buying property (commercial purchase / LAP)
-  "buyingPropertyType","buyingPropertyTypeOther","buyingPropertyMarketValue","buyingPropertyAge",
-  "buyingPropertyState","buyingPropertyCity","buyingPropertyPincode","buyingPropertyPincodeOther",
-  // sections object (nested — we render flat fields instead)
-  "sections",
-  // lease rental discounting
-  "monthlyLeaseIncome","totalLeaseAmount","leasePropertyDuration","leasePropertyMarketValue",
-  "leasePropertyAge","leasePropertyState","leasePropertyCity","leasePropertyPincode","leasePropertyPincodeOther",
-  // transaction bank (handled specially — can be object or string)
-  "transactionBankName","transactionBankOther","transactionBanks",
-]);
+const flattenDetail = (label: string, value: unknown): { label: string; value: unknown }[] => {
+  if (value === null || value === undefined || value === "") return [];
+  if (Array.isArray(value)) {
+    if (!value.length) return [];
+    if (value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) {
+      return [{ label, value: value.filter((item) => item !== null) }];
+    }
+    return value.flatMap((item, index) => flattenDetail(`${label} ${index + 1}`, item));
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .flatMap(([key, item]) => flattenDetail(`${label} / ${toLabel(key)}`, item));
+  }
+  return [{ label, value }];
+};
+
+type IconComponent = React.ComponentType<{ size?: number; className?: string }>;
+type StatusConfig = {
+  bg: string;
+  text: string;
+  ring: string;
+  dot: string;
+  icon: IconComponent;
+  glow: string;
+};
 
 // ── Status config ─────────────────────────────────────────────────────────────
-const STATUS_MAP: Record<string, {
-  bg: string; text: string; ring: string; dot: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  glow: string;
-}> = {
+const STATUS_MAP: Record<string, StatusConfig> = {
   Submitted: { bg: "#eff6ff", text: "#1d4ed8", ring: "#bfdbfe", dot: "#3b82f6", icon: Send,         glow: "#3b82f6" },
   Pending:   { bg: "#fffbeb", text: "#b45309", ring: "#fde68a", dot: "#f59e0b", icon: Clock,         glow: "#f59e0b" },
   Approved:  { bg: "#f0fdf4", text: "#15803d", ring: "#bbf7d0", dot: "#22c55e", icon: CheckCircle2,  glow: "#22c55e" },
@@ -107,7 +97,7 @@ const STATUS_MAP: Record<string, {
 };
 
 // ── Loan type icon ────────────────────────────────────────────────────────────
-const LOAN_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
+const LOAN_ICON: Record<string, IconComponent> = {
   "personal-loan":         User,
   "business-loan":         Briefcase,
   "home-loan":             Home,
@@ -124,24 +114,37 @@ const LOAN_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
+type DataFieldProps = {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
+  highlight?: boolean;
+  className?: string;
+};
+
 const DataField = ({
-  label, value, mono = false, highlight = false,
-}: { label: string; value?: string | null; mono?: boolean; highlight?: boolean }) => (
-  <div className="flex flex-col gap-1">
-    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+  label, value, mono = false, highlight = false, className = "",
+}: DataFieldProps) => (
+  <div className={`rounded-2xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 ${className}`}>
+    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
     {value
-      ? <span className={`text-sm leading-snug break-words ${mono ? "font-mono" : "font-semibold"} ${highlight ? "text-[#066a9c]" : "text-slate-800"}`}>{value}</span>
-      : <span className="text-sm text-slate-300 font-light">Not provided</span>}
+      ? <span className={`mt-2 block text-sm leading-snug break-words ${mono ? "font-mono" : "font-semibold"} ${highlight ? "text-[#066a9c]" : "text-slate-800"}`}>{value}</span>
+      : <span className="mt-2 block text-sm text-slate-300 font-light">Not provided</span>}
   </div>
 );
 
-const TagList = ({ label, items }: { label: string; items: string[] }) => (
+type TagListProps = {
+  label: string;
+  items: string[];
+};
+
+const TagList = ({ label, items }: TagListProps) => (
   <div className="col-span-full flex flex-col gap-2">
-    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
     <div className="flex flex-wrap gap-2">
       {items.length > 0
         ? items.map((item, i) => (
-            <span key={i} className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+            <span key={i} className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-200">
               {item}
             </span>
           ))
@@ -150,50 +153,62 @@ const TagList = ({ label, items }: { label: string; items: string[] }) => (
   </div>
 );
 
-const InfoSection = ({
-  id, title, subtitle, icon: Icon, accent, children,
-}: {
-  id?: string; title: string; subtitle: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+type InfoSectionProps = {
+  id?: string;
+  title: string;
+  subtitle: string;
+  icon: IconComponent;
   accent: string;
   children: React.ReactNode;
-}) => (
-  <div id={id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden scroll-mt-28">
-    <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100"
-      style={{ background: "linear-gradient(90deg,#f8fafc,#f1f5f9)" }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-        style={{ background: `${accent}15`, color: accent }}>
+};
+
+const InfoSection = ({
+  id, title, subtitle, icon: Icon, accent, children,
+}: InfoSectionProps) => (
+  <div id={id} className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.04)] scroll-mt-28">
+    <div className="flex items-center gap-4 border-b border-slate-100 px-6 py-4"
+      style={{ background: "linear-gradient(90deg,#f8fafc 0%,#f1f5f9 100%)" }}>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 shadow-sm"
+        style={{ background: `${accent}18`, color: accent }}>
         <Icon size={18} />
       </div>
       <div>
         <p className="text-sm font-bold text-slate-800">{title}</p>
-        <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+        <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>
       </div>
     </div>
-    <div className="px-6 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
+    <div className="grid grid-cols-1 gap-x-8 gap-y-5 px-6 py-6 sm:grid-cols-2 lg:grid-cols-3">
       {children}
     </div>
   </div>
 );
 
+type KpiTileProps = {
+  label: string;
+  value: string;
+  icon: IconComponent;
+  color: string;
+  sub?: string;
+};
+
 const KpiTile = ({
   label, value, icon: Icon, color, sub,
-}: { label: string; value: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string; sub?: string }) => (
-  <div className="flex flex-col gap-2 rounded-2xl p-4 border border-slate-100 bg-white shadow-sm">
-    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-      style={{ background: `${color}12`, color }}>
+}: KpiTileProps) => (
+  <div className="flex flex-col gap-2 rounded-2xl border border-white/15 bg-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm transition-transform duration-200 hover:-translate-y-0.5">
+    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10"
+      style={{ background: `${color}22`, color }}>
       <Icon size={17} />
     </div>
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="text-lg font-extrabold text-slate-900 leading-tight mt-0.5">{value}</p>
-      {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-200">{label}</p>
+      <p className="mt-1 text-lg font-extrabold leading-tight text-white">{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-slate-200">{sub}</p>}
     </div>
   </div>
 );
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-const PersonalLoanDetail = () => {
+const LoanApplicationDetail = () => {
   const { loanType, id } = useParams<{ loanType: string; id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -254,27 +269,20 @@ const PersonalLoanDetail = () => {
         return loan.transactionBanks ?? [];
       })()
     : [];
+  const transactionBankValue = loan?.transactionBankName;
+  const transactionBankDisplayName =
+    typeof transactionBankValue === "object" && transactionBankValue !== null
+      ? transactionBankValue.displayName
+      : typeof transactionBankValue === "string" ? transactionBankValue : null;
 
-  // ── Compute extra fields not in known sections ────────────────────────────
-  const extraFields = loan
-    ? Object.entries(loan).filter(([key, val]) => {
-        if (KNOWN_FIELDS.has(key)) return false;
-        if (val === null || val === undefined) return false;
-        if (Array.isArray(val) && val.length === 0) return false;
-        if (typeof val === "object" && !Array.isArray(val)) return false;
-        return true;
-      })
-    : [];
-
-  // ── Section flags + in-page navigation ────────────────────────────────────
-  const flags = {
+  // ── Section flags + fields already displayed in curated sections ──────────
+  const sectionFlags = {
     salaried: loan?.employmentType === "Salaried",
     business: !isBiz && loan?.employmentType === "Self Employed - Business",
     professional: !isBiz && loan?.employmentType === "Self Employed - Professional",
     lease: Boolean(loan?.monthlyLeaseIncome || loan?.leasePropertyMarketValue),
     buyingProperty: Boolean(loan?.buyingPropertyType || loan?.buyingPropertyMarketValue),
     isBiz,
-    extra: extraFields.length > 0,
     liabilities: Boolean(
       loan &&
         (loan.existingEMI != null ||
@@ -284,6 +292,59 @@ const PersonalLoanDetail = () => {
     ),
   };
 
+
+  const displayedFields = new Set([
+    "_id", "user", "__v", "loanType", "loanAmount", "loanTenure", "status", "createdAt", "updatedAt",
+    "fullName", "mobile", "email", "dob", "panNumber", "state", "city", "pincode", "residenceStatus",
+    ...(sectionFlags.salaried ? [
+      "employmentType", "companyName", "companyType", "monthlySalary", "salaryReceivedAs", "salaryBankName",
+      ...(loan?.companyType === "Other" ? ["companyTypeOther"] : []),
+      ...(loan?.salaryReceivedAs === "Other" ? ["salaryReceivedAsOther"] : []),
+      ...(loan?.salaryBankName === "Other" ? ["salaryBankOther"] : []),
+    ] : []),
+    ...(sectionFlags.business ? [
+      "employmentType", "businessName", "businessType", "natureOfBusiness", "industryType", "subIndustry",
+      "gstNumber", "companyPanNumber", "businessEstablishedDate", "businessPlaceStatus", "businessState",
+      "businessCity", "businessPincode", "transactionBankName", "transactionBanks",
+      ...(loan?.businessType === "Other" ? ["businessTypeOther"] : []),
+      ...(loan?.natureOfBusiness === "Other" ? ["natureOfBusinessOther"] : []),
+      ...(loan?.industryType === "Other" ? ["industryTypeOther"] : []),
+      ...(loan?.businessPlaceStatus === "Other" ? ["businessPlaceStatusOther"] : []),
+      "lastYearTurnover", "last2YearsTurnover", "lastYearNetIncome", "last2YearsNetIncome",
+    ] : []),
+    ...(sectionFlags.professional ? [
+      "employmentType", "profession", "businessPlaceStatus", "businessState", "businessCity", "businessPincode",
+      "transactionBankName", "transactionBanks", "currentYearTurnover", "priorYearTurnover",
+      "currentYearNetIncome", "previousYearNetIncome",
+      ...(loan?.profession === "Other" ? ["professionOther"] : []),
+      ...(loan?.businessPlaceStatus === "Other" ? ["businessPlaceStatusOther"] : []),
+    ] : []),
+    ...(sectionFlags.lease ? [
+      "monthlyLeaseIncome", "totalLeaseAmount", "leasePropertyDuration", "leasePropertyMarketValue",
+      "leasePropertyAge", "leasePropertyState", "leasePropertyCity", "leasePropertyPincode",
+    ] : []),
+    ...(sectionFlags.buyingProperty ? [
+      "buyingPropertyType", "buyingPropertyMarketValue", "buyingPropertyAge", "buyingPropertyState",
+      "buyingPropertyCity", "buyingPropertyPincode",
+      ...(loan?.buyingPropertyType === "Other" ? ["buyingPropertyTypeOther"] : []),
+    ] : []),
+    ...(sectionFlags.isBiz ? [
+      "businessName", "businessType", "businessVintage", "gstNumber", "udyamNumber", "companyName", "companyType",
+      "currentYearTurnover", "priorYearTurnover", "lastYearTurnover", "currentYearNetIncome", "previousYearNetIncome",
+      ...(loan?.companyType === "Other" ? ["companyTypeOther"] : []),
+    ] : []),
+    ...(sectionFlags.liabilities ? [
+      "existingEMI", "existingLoanAmount", "existingBanks", "otherBankList", "existingLoanTypes", "otherLoanList",
+    ] : []),
+  ]);
+
+  const extraFields = loan
+    ? Object.entries(loan)
+        .filter(([key, value]) => !displayedFields.has(key) && value !== "" && value !== null && value !== undefined)
+        .flatMap(([key, value]) => flattenDetail(toLabel(key), value))
+    : [];
+
+  const flags = { ...sectionFlags, extra: extraFields.length > 0 };
   const navItems: { id: string; label: string }[] = [
     { id: "applicant", label: "Applicant" },
     ...(flags.salaried ? [{ id: "employment", label: "Employment" }] : []),
@@ -534,6 +595,7 @@ const PersonalLoanDetail = () => {
               <DataField label="Business State"           value={V(loan!.businessState)} />
               <DataField label="Business City"            value={V(loan!.businessCity)} />
               <DataField label="Business Pincode"         value={V(loan!.businessPincode)} mono />
+              <DataField label="Transaction Bank Selection" value={V(transactionBankDisplayName)} />
               <TagList   label="Transaction Banks"        items={transactionBanks} />
             </InfoSection>
             <InfoSection id="business-financials" icon={TrendingDown} accent="#d97706" title="Business Financials" subtitle="Annual turnover and net income">
@@ -556,6 +618,7 @@ const PersonalLoanDetail = () => {
               <DataField label="Business State"        value={V(loan!.businessState)} />
               <DataField label="Business City"         value={V(loan!.businessCity)} />
               <DataField label="Business Pincode"      value={V(loan!.businessPincode)} mono />
+              <DataField label="Transaction Bank Selection" value={V(transactionBankDisplayName)} />
               <TagList   label="Transaction Banks"     items={transactionBanks} />
             </InfoSection>
             <InfoSection id="professional-financials" icon={TrendingDown} accent="#d97706" title="Professional Financials" subtitle="Annual turnover and net income">
@@ -623,28 +686,25 @@ const PersonalLoanDetail = () => {
             car loan, education loan, LAP, balance transfer, etc.          */}
         {extraFields.length > 0 && (
           <InfoSection id="additional" icon={LayoutList} accent="#7c3aed" title="Additional Details" subtitle={`${label}-specific information`}>
-            {extraFields.map(([key, val]) => {
-              if (Array.isArray(val)) {
+            {extraFields.map(({ label: fieldLabel, value }) => {
+              if (Array.isArray(value)) {
                 return (
                   <TagList
-                    key={key}
-                    label={toLabel(key)}
-                    items={(val as unknown[]).map(String).filter(Boolean)}
+                    key={fieldLabel}
+                    label={fieldLabel}
+                    items={value.map(String).filter(Boolean)}
                   />
                 );
               }
               const formatted =
-                typeof val === "number" && key.toLowerCase().includes("amount") ? INR(val as number)
-                : typeof val === "number" && key.toLowerCase().includes("value")  ? INR(val as number)
-                : typeof val === "number" && key.toLowerCase().includes("cost")   ? INR(val as number)
-                : typeof val === "number" && key.toLowerCase().includes("price")  ? INR(val as number)
-                : V(val as string | number | boolean);
+                typeof value === "number" && /amount|value|cost|price/i.test(fieldLabel) ? INR(value)
+                : V(value as string | number | boolean);
               return (
                 <DataField
-                  key={key}
-                  label={toLabel(key)}
+                  key={fieldLabel}
+                  label={fieldLabel}
                   value={formatted}
-                  mono={typeof val === "number"}
+                  mono={typeof value === "number"}
                 />
               );
             })}
@@ -720,4 +780,4 @@ const PersonalLoanDetail = () => {
   );
 };
 
-export default PersonalLoanDetail;
+export default LoanApplicationDetail;
