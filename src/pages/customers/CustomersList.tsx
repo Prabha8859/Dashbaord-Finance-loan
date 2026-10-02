@@ -341,14 +341,14 @@ const CustomersList = () => {
 
       {viewingCustomer && (
         <div
-          className="fixed inset-0 z-40 flex justify-end bg-slate-950/50 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px] sm:p-6"
           onClick={closeCustomerDetails}
         >
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="customer-applications-title"
-            className="flex h-full w-full max-w-3xl flex-col border-l border-white/50 bg-[#f7f9fc] shadow-2xl"
+            className="flex max-h-[min(90vh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/50 bg-[#f7f9fc] shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="relative overflow-hidden border-b border-slate-200 bg-white">
@@ -469,43 +469,62 @@ const CustomersList = () => {
                           return (
                             <article key={application._id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm">
                               <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-800">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Requested amount</p>
+                                  <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">
                                     {formatCurrency(application.loanAmount)}
-                                    <span className="mx-2 text-slate-300">·</span>
-                                    {application.loanTenure ? `${application.loanTenure} months` : "Tenure not provided"}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    ID: <span className="font-mono">{application._id}</span>
-                                    {application.createdAt && <> <span className="px-1">·</span> Applied {formatDate(application.createdAt)}</>}
                                   </p>
                                 </div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
                                   application.status === "Approved"
-                                    ? "bg-emerald-50 text-emerald-700"
+                                    ? "border-emerald-100 bg-emerald-50 text-emerald-700"
                                     : application.status === "Rejected"
-                                      ? "bg-red-50 text-red-700"
+                                      ? "border-red-100 bg-red-50 text-red-700"
                                       : application.status === "Pending"
-                                        ? "bg-amber-50 text-amber-700"
-                                        : "bg-sky-50 text-sky-700"
+                                        ? "border-amber-100 bg-amber-50 text-amber-700"
+                                        : "border-sky-100 bg-sky-50 text-sky-700"
                                 }`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${
+                                    application.status === "Approved" ? "bg-emerald-500"
+                                      : application.status === "Rejected" ? "bg-red-500"
+                                        : application.status === "Pending" ? "bg-amber-500" : "bg-sky-500"
+                                  }`} />
                                   {application.status}
                                 </span>
                               </div>
 
+                              <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Tenure</p>
+                                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                                    {application.loanTenure ? `${application.loanTenure} months` : "Not provided"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Applied on</p>
+                                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                                    {application.createdAt ? formatDate(application.createdAt) : "—"}
+                                  </p>
+                                </div>
+                                <div className="col-span-2 min-w-0 border-t border-slate-200/80 pt-2">
+                                  <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Application ID</p>
+                                  <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{application._id}</p>
+                                </div>
+                              </div>
+
                               {isOpen && canReview ? (
-                                <div className="flex flex-wrap justify-end gap-2">
+                                <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
                                   <button
                                     onClick={() => setPendingDecision({ group, application, status: "Rejected" })}
                                     disabled={Boolean(updatingApplicationId)}
-                                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="rounded-lg border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     Reject
                                   </button>
                                   <button
                                     onClick={() => setPendingDecision({ group, application, status: "Approved" })}
                                     disabled={Boolean(updatingApplicationId)}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-emerald-900/10 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     {updatingApplicationId === application._id
                                       ? <LoaderCircle size={13} className="animate-spin" />
@@ -519,7 +538,9 @@ const CustomersList = () => {
                                 </p>
                               ) : null}
                               {updatingApplicationId === application._id && (
-                                <p className="text-right text-xs text-slate-500">Saving decision...</p>
+                                <p className="flex items-center justify-end gap-1.5 text-xs font-medium text-slate-500">
+                                  <LoaderCircle size={12} className="animate-spin" /> Saving decision...
+                                </p>
                               )}
                             </article>
                           );
